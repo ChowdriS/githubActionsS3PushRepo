@@ -9,21 +9,38 @@ jobs:
   deploy:
     runs-on: self-hosted
 
+    env:
+      BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET }}
+      ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Create S3 bucket if needed
         run: |
-          aws s3api head-bucket --bucket "${{ secrets.AWS_S3_BUCKET }}" 2>/dev/null || \
-          aws s3api create-bucket \
-            --bucket "${{ secrets.AWS_S3_BUCKET }}" \
-            --region us-east-1
+          if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+            echo "Bucket $BUCKET_NAME already exists. Skipping creation."
+          else
+            echo "Bucket does not exist. Creating $BUCKET_NAME"
+            aws s3api create-bucket \
+              --bucket "$BUCKET_NAME" \
+              --region us-east-1
+          fi
 
-      - name: Upload repo files to S3 with instance role
+      - name: Enable versioning only for prod
+        if: env.ENVIRONMENT == 'prod'
         run: |
-          aws s3 sync ./ "s3://${{ secrets.AWS_S3_BUCKET }}" \
+          echo "Enabling versioning for production bucket..."
+          aws s3api put-bucket-versioning \
+            --bucket "$BUCKET_NAME" \
+            --versioning-configuration Status=Enabled
+
+      - name: Upload files to S3
+        run: |
+          aws s3 sync ./ "s3://$BUCKET_NAME" \
             --region us-east-1 \
-            --exclude ".git*/*"
+            --exclude ".git/*"
+
 
 
 #   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
